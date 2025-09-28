@@ -1,0 +1,88 @@
+//@version=5
+indicator("UT Bot 1 & 2 + STC (with JSON alerts)", overlay=true, max_labels_count=500, max_lines_count=500)
+
+// === Inputs ===
+ut1_key  = input.float(2.0, "UT Bot 1 - Key (multiplier)", step=0.1)
+ut1_atr  = input.int(1, "UT Bot 1 - ATR Period", minval=1)
+
+ut2_key  = input.float(2.0, "UT Bot 2 - Key (multiplier)", step=0.1)
+ut2_atr  = input.int(300, "UT Bot 2 - ATR Period", minval=1)
+
+// STC inputs (integers)
+stc_fast   = input.int(27, "STC Fast (EMA length)", minval=1)
+stc_slow   = input.int(50, "STC Slow (EMA length)", minval=1)
+stc_cycle  = input.int(80, "STC Cycle (stochastic length)", minval=1)
+stc_smooth = input.int(3,  "STC Smooth (EMA)", minval=1)
+
+// === UT Bot (SuperTrend-style) function ===
+f_utbot(_key, _atrlen) =>
+    _atr = ta.atr(_atrlen)
+    _hl2 = (high + low) / 2.0
+    _upper = _hl2 + _key * _atr
+    _lower = _hl2 - _key * _atr
+
+    var float finalUpper = na
+    var float finalLower = na
+    finalUpper := na(finalUpper[1]) ? _upper : (_upper < finalUpper[1] or close[1] > finalUpper[1] ? _upper : finalUpper[1])
+    finalLower := na(finalLower[1]) ? _lower : (_lower > finalLower[1] or close[1] < finalLower[1] ? _lower : finalLower[1])
+
+    prevFinalUpper = nz(finalUpper[1], _upper)
+    prevFinalLower = nz(finalLower[1], _lower)
+    var int trend = 1
+    trend := close > prevFinalUpper ? 1 : close < prevFinalLower ? -1 : nz(trend[1], 1)
+
+    band = trend == 1 ? finalLower : finalUpper
+    [trend, band, finalUpper, finalLower]
+
+// === STC (Schaff Trend Cycle) function ===
+f_stc(_src, _fast, _slow, _cycle, _smooth) =>
+    macd = ta.ema(_src, _fast) - ta.ema(_src, _slow)
+    highest_macd = ta.highest(macd, _cycle)
+    lowest_macd  = ta.lowest(macd, _cycle)
+    denom1 = highest_macd - lowest_macd
+    k = denom1 == 0 ? 0.0 : 100.0 * (macd - lowest_macd) / denom1
+    d = ta.ema(k, _smooth)
+    highest_d = ta.highest(d, _cycle)
+    lowest_d  = ta.lowest(d, _cycle)
+    denom2 = highest_d - lowest_d
+    k2 = denom2 == 0 ? 0.0 : 100.0 * (d - lowest_d) / denom2
+    stc = ta.ema(k2, _smooth)
+    stc
+
+// === Calculations ===
+[trend1, band1, _, _] = f_utbot(ut1_key, ut1_atr)
+[trend2, band2, _, _] = f_utbot(ut2_key, ut2_atr)
+stc = f_stc(close, stc_fast, stc_slow, stc_cycle, stc_smooth)
+
+// === Plot UT Bot bands on price chart ===
+plot(band1, "UT Bot 1", color = trend1 == 1 ? color.green : color.red, style=plot.style_linebr, linewidth=2)
+plot(band2, "UT Bot 2", color = trend2 == 1 ? color.green : color.red, style=plot.style_linebr, linewidth=2)
+
+// === Plot STC (note: because indicator is overlay=true, STC will plot on the price pane).
+// If you want STC in its own pane, see notes below.
+plot(stc, title="STC", linewidth=2)
+hline(75, title="Overbought", linestyle=hline.style_dashed)
+hline(25, title="Oversold",  linestyle=hline.style_dashed)
+
+// === Signals: buy on UTBot1 flip-up, sell on UTBot2 flip-down ===
+buySignal  = (trend1 == 1) and (trend1[1] == -1)
+sellSignal = (trend2 == -1) and (trend2[1] == 1)
+
+if buySignal
+    label.new(bar_index, low, "Buy",  style=label.style_label_up,   color=color.green,  textcolor=color.white, size=size.tiny, yloc=yloc.belowbar)
+
+if sellSignal
+    label.new(bar_index, high, "Sell", style=label.style_label_down, color=color.red,    textcolor=color.white, size=size.tiny, yloc=yloc.abovebar)
+
+// === Dynamic JSON alert (contains ticker, action and STC value) ===
+if buySignal
+    buyMsg = '{ "symbol": "' + syminfo.ticker + '", "action": "buy", "price": ' + str.tostring(close, "#.##") + ', "stc": ' + str.tostring(stc, "#.##") + ' }'
+    alert(buyMsg, alert.freq_once_per_bar_close)
+
+if sellSignal
+    sellMsg = '{ "symbol": "' + syminfo.ticker + '", "action": "sell", "price": ' + str.tostring(close, "#.##") + ', "stc": ' + str.tostring(stc, "#.##") + ' }'
+    alert(sellMsg, alert.freq_once_per_bar_close)
+
+// === also provide simple alertconditions if you want to create static alerts ===
+alertcondition(buySignal,  title="UTBot Buy",  message='UTBot Buy signal')
+alertcondition(sellSignal, title="UTBot Sell", message='UTBot Sell signal')

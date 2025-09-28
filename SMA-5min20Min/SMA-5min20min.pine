@@ -1,0 +1,27 @@
+//@version=5
+indicator("5/20 SMA Cross with 50 SMA Background and Conditional Signals", overlay=true)
+
+// Calculate SMAs
+sma5 = ta.sma(close, 5)
+sma20 = ta.sma(close, 20)
+sma50 = ta.sma(close, 50)
+
+// Detect crosses
+crossBelow = ta.crossunder(sma5, sma20)
+crossAbove = ta.crossover(sma5, sma20)
+
+// Plot SMAs
+plot(sma5, color=color.blue, title="5 SMA")
+plot(sma20, color=color.orange, title="20 SMA")
+plot(sma50, color=color.purple, title="50 SMA")
+
+// Background color based on price relative to 50 SMA
+bgColor = close > sma50 ? color.new(color.green, 90) : close < sma50 ? color.new(color.red, 90) : na
+bgcolor(bgColor)
+
+// Conditional labels
+if (crossBelow and close < sma50)
+    label.new(bar_index, low, "TRADE SIGNAL (SELL)", color=color.red, style=label.style_label_down, textcolor=color.white, size=size.small)
+
+if (crossAbove and close > sma50)
+    label.new(bar_index, high, "TRADE SIGNAL (BUY)", color=color.green, style=label.style_label_up, textcolor=color.white, size=size.small)
