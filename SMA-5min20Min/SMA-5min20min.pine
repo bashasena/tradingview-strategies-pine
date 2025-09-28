@@ -1,27 +1,28 @@
 //@version=5
-indicator("5/20 SMA Cross with 50 SMA Background and Conditional Signals", overlay=true)
+strategy("SMA 5/20 Crossover with SL/TP & Webhook JSON Alert", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=100)
 
-// Calculate SMAs
-sma5 = ta.sma(close, 5)
-sma20 = ta.sma(close, 20)
-sma50 = ta.sma(close, 50)
+smaFastLength = input.int(5, title="Fast SMA Period")
+smaSlowLength = input.int(20, title="Slow SMA Period")
+takeProfitPerc = input.float(2.0, title="Take Profit (%)", minval=0.1)
+stopLossPerc = input.float(1.0, title="Stop Loss (%)", minval=0.1)
 
-// Detect crosses
-crossBelow = ta.crossunder(sma5, sma20)
-crossAbove = ta.crossover(sma5, sma20)
+smaFast = ta.sma(close, smaFastLength)
+smaSlow = ta.sma(close, smaSlowLength)
 
-// Plot SMAs
-plot(sma5, color=color.blue, title="5 SMA")
-plot(sma20, color=color.orange, title="20 SMA")
-plot(sma50, color=color.purple, title="50 SMA")
+plot(smaFast, title="SMA Fast", color=color.orange)
+plot(smaSlow, title="SMA Slow", color=color.blue)
 
-// Background color based on price relative to 50 SMA
-bgColor = close > sma50 ? color.new(color.green, 90) : close < sma50 ? color.new(color.red, 90) : na
-bgcolor(bgColor)
+longCondition = ta.crossover(smaFast, smaSlow)
+exitCondition = ta.crossunder(smaFast, smaSlow)
 
-// Conditional labels
-if (crossBelow and close < sma50)
-    label.new(bar_index, low, "TRADE SIGNAL (SELL)", color=color.red, style=label.style_label_down, textcolor=color.white, size=size.small)
+longTakeProfit = close * (1 + takeProfitPerc / 100)
+longStopLoss = close * (1 - stopLossPerc / 100)
 
-if (crossAbove and close > sma50)
-    label.new(bar_index, high, "TRADE SIGNAL (BUY)", color=color.green, style=label.style_label_up, textcolor=color.white, size=size.small)
+if (longCondition)
+    strategy.entry("Buy", strategy.long)
+    strategy.exit("TP/SL", from_entry="Buy", limit=longTakeProfit, stop=longStopLoss)
+    alert('{"symbol":"{{ticker}}","action":"buy"}', alert.freq_once_per_bar_close)
+
+if (exitCondition)
+    strategy.close("Buy")
+    alert('{"symbol":"{{ticker}}","action":"sell"}', alert.freq_once_per_bar_close)
